@@ -30,7 +30,6 @@ try:
 except ImportError:
     "You can only use revit library from Revit not %s." % config.platform.platform
 
-
 def collectRooms(document=None):
     """Collect all the rooms in the current Revit document."""
     if not document:
@@ -39,6 +38,7 @@ def collectRooms(document=None):
     collector.OfCategory(BuiltInCategory.OST_Rooms)
     roomIter = collector.GetElementIdIterator()
     roomIter.Reset()
+
     return tuple(document.GetElement(elId) for elId in roomIter)
 
 
@@ -246,6 +246,7 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                 _zone.addSurface(_hbSurface)
                 continue
 
+
             for boundaryFace in _boundaryFaces:
                 # boundaryFace is from type SpatialElementBoundarySubface
                 # get the element (Wall, Roof, etc)
@@ -270,32 +271,50 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                     # TODO: set adjacent surface
                     pass
 
-                # Take care of curtain wall systems
-                # I'm not sure how this will work with custom Curtain Wall
-                if getParameter(boundaryElement, 'Family') == 'Curtain Wall':
-                    _elementIds, _coordinates = \
-                        extractPanelsVertices(boundaryElement, _baseFace, opt)
+                ## Mostapha's original code, not working for PW models
 
-                    for count, coordinate in enumerate(_coordinates):
-                        if not coordinate:
-                            print "{} has an opening with less than " \
-                                "two coordinates. It has been removed!" \
-                                .format(childElements[count].Id)
-                            continue
+                ## if getParameter(boundaryElement, 'Family') == 'Curtain Systems':
 
-                        # create honeybee surface - use element id as the name
-                        _hbfenSurface = HBFenSurface(
-                            _elementIds[count], coordinate)
+                #return boundaryElement.WallType.Kind
+				
+				
+                try:
+                    # My code working for curtain panels in simple two room example 7/31/2016
 
-                        # add fenestration surface to base honeybee surface
-                        _hbSurface.addFenestrationSurface(_hbfenSurface)
+                    if str(boundaryElement.WallType.Kind) == 'Curtain':
+
+                        _elementIds, _coordinates = \
+                            extractPanelsVertices(boundaryElement, _baseFace, opt)
+
+                        for count, coordinate in enumerate(_coordinates):
+                            if not coordinate:
+                                print "{} has an opening with less than " \
+                                    "two coordinates. It has been removed!" \
+                                    .format(childElements[count].Id)
+                                continue
+
+                            # create honeybee surface - use element id as the name
+                            _hbfenSurface = HBFenSurface(
+                                _elementIds[count], coordinate)
+
+                            # add fenestration surface to base honeybee surface
+                            _hbSurface.addFenestrationSurface(_hbfenSurface)
+
+                except:
+                    pass
+                    # boundary Element does not have attribute WallType and therefore is not a wall! It could be a floor
+
                 else:
                     # check if there is any child elements
                     childElements = getChildElemenets(boundaryElement)
 
                     if childElements:
 
+                        # return childElements
+
                         _coordinates = exctractGlazingVertices(boundaryElement, _baseFace, opt)
+
+                        # return _coordinates
 
                         for count, coordinate in enumerate(_coordinates):
 
@@ -321,4 +340,5 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
         elementsData.Dispose()
 
     calculator.Dispose()
+    return _zones
     return _zones
