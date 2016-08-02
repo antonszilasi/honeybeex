@@ -108,7 +108,6 @@ def extractPanelsVertices(hostElement, baseFace, opt):
 
 def exctractGlazingVertices(hostElement, baseFace, opt):
     """Return glazing vertices for a window family instance.
-
     I was hoping that revit supports a cleaner way for doing this but for now
     I calculate the bounding box and find the face that it's vertices are coplanar
     with the host face.
@@ -149,7 +148,6 @@ def createUUID():
 
 def _getInternalElements(elements):
     """Get internal element from dynamo objects.
-
     This is similar to UnwrapElement in dynamo but will work fine outside dynamo.
     """
     if not elements:
@@ -165,7 +163,6 @@ def _getInternalElements(elements):
 
 def getBoundaryLocation(index=1):
     """Get SpatialElementBoundaryLocation.
-
     0 > Finish: Spatial element finish face.
     1 > Center: Spatial element centerline.
     """
@@ -190,7 +187,6 @@ def getParameter(el, parameter):
 
 def convertRoomsToHBZones(rooms, boundaryLocation=1):
     """Convert rooms to honeybee zones.
-
     This script will only work from inside Dynamo nodes. for a similar script
     forRrevit check this link for more details:
     https://github.com/jeremytammik/SpatialElementGeometryCalculator/
@@ -271,38 +267,24 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                     # TODO: set adjacent surface
                     pass
 
-                ## Mostapha's original code, not working for PW models
+                if (hasattr(boundaryElement,'WallType')) and (str(boundaryElement.WallType.Kind) == 'Curtain'):
 
-                ## if getParameter(boundaryElement, 'Family') == 'Curtain Systems':
+                    _elementIds, _coordinates = \
+                        extractPanelsVertices(boundaryElement, _baseFace, opt)
 
-                #return boundaryElement.WallType.Kind
-				
-				
-                try:
-                    # My code working for curtain panels in simple two room example 7/31/2016
+                    for count, coordinate in enumerate(_coordinates):
+                        if not coordinate:
+                            print "{} has an opening with less than " \
+                                "two coordinates. It has been removed!" \
+                                .format(childElements[count].Id)
+                            continue
 
-                    if str(boundaryElement.WallType.Kind) == 'Curtain':
+                        # create honeybee surface - use element id as the name
+                        _hbfenSurface = HBFenSurface(
+                            _elementIds[count], coordinate)
 
-                        _elementIds, _coordinates = \
-                            extractPanelsVertices(boundaryElement, _baseFace, opt)
-
-                        for count, coordinate in enumerate(_coordinates):
-                            if not coordinate:
-                                print "{} has an opening with less than " \
-                                    "two coordinates. It has been removed!" \
-                                    .format(childElements[count].Id)
-                                continue
-
-                            # create honeybee surface - use element id as the name
-                            _hbfenSurface = HBFenSurface(
-                                _elementIds[count], coordinate)
-
-                            # add fenestration surface to base honeybee surface
-                            _hbSurface.addFenestrationSurface(_hbfenSurface)
-
-                except:
-                    pass
-                    # boundary Element does not have attribute WallType and therefore is not a wall! It could be a floor
+                        # add fenestration surface to base honeybee surface
+                        _hbSurface.addFenestrationSurface(_hbfenSurface)
 
                 else:
                     # check if there is any child elements
@@ -310,11 +292,7 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
 
                     if childElements:
 
-                        # return childElements
-
                         _coordinates = exctractGlazingVertices(boundaryElement, _baseFace, opt)
-
-                        # return _coordinates
 
                         for count, coordinate in enumerate(_coordinates):
 
@@ -340,5 +318,4 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
         elementsData.Dispose()
 
     calculator.Dispose()
-    return _zones
     return _zones
