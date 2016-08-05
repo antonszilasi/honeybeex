@@ -6,6 +6,7 @@ from hbfensurface import HBFenSurface
 
 import uuid
 
+panelNames = []
 
 try:
     import clr
@@ -30,7 +31,6 @@ try:
 except ImportError:
     "You can only use revit library from Revit not %s." % config.platform.platform
 
-
 def collectRooms(document=None):
     """Collect all the rooms in the current Revit document."""
     if not document:
@@ -39,6 +39,7 @@ def collectRooms(document=None):
     collector.OfCategory(BuiltInCategory.OST_Rooms)
     roomIter = collector.GetElementIdIterator()
     roomIter.Reset()
+
     return tuple(document.GetElement(elId) for elId in roomIter)
 
 
@@ -54,7 +55,7 @@ def collectMEPSpaces(document=None):
 
 
 def getChildElemenets(hostElement, addRectOpenings=True, includeShadows=False,
-                      includeEmbeddedWalls=False,
+                      includeEmbeddedWalls=True,
                       includeSharedEmbeddedInserts=True):
     """Get child elemsts for a Revit element."""
     ids = hostElement.FindInserts(addRectOpenings,
@@ -72,6 +73,7 @@ def extractPanelsVertices(hostElement, baseFace, opt):
 
     _panelElementIds = []
     _panelVertices = []
+    _panelTransparencies = []
 
     for panelId in hostElement.CurtainGrid.GetPanelIds():
 
@@ -102,13 +104,31 @@ def extractPanelsVertices(hostElement, baseFace, opt):
         (pt.Dispose() for opening in openings for pt in opening)
         (face.Dispose() for faceGroup in _outerFaces for face in faceGroup)
 
+        # Determine whether panel is solid or glazed
+        # Extract panel name then search for the name glazed
+        # If it is glazed then set panelIsFenestration to True and create HBFenSurface
+        # else set it to False
+        # XXXX TODO is this best practice?
 
-    return _panelElementIds, _panelVertices
+        panelName = str(hostElement.Document.GetElement(panelId).Name).lower()
+
+        if 'glazed' in panelName:
+
+            # Panel is glazed
+
+            _panelTransparencies.append(True)
+
+        else:
+
+            # Panel is opaque
+
+            _panelTransparencies.append(False)
+
+    return _panelElementIds, _panelVertices, _panelTransparencies
 
 
 def exctractGlazingVertices(hostElement, baseFace, opt):
     """Return glazing vertices for a window family instance.
-
     I was hoping that revit supports a cleaner way for doing this but for now
     I calculate the bounding box and find the face that it's vertices are coplanar
     with the host face.
@@ -141,7 +161,6 @@ def exctractGlazingVertices(hostElement, baseFace, opt):
 
     return filteredCoordinates
 
-
 def createUUID():
     """Return a random uuid."""
     return str(uuid.uuid4())
@@ -149,7 +168,6 @@ def createUUID():
 
 def _getInternalElements(elements):
     """Get internal element from dynamo objects.
-
     This is similar to UnwrapElement in dynamo but will work fine outside dynamo.
     """
     if not elements:
@@ -165,7 +183,6 @@ def _getInternalElements(elements):
 
 def getBoundaryLocation(index=1):
     """Get SpatialElementBoundaryLocation.
-
     0 > Finish: Spatial element finish face.
     1 > Center: Spatial element centerline.
     """
@@ -190,7 +207,6 @@ def getParameter(el, parameter):
 
 def convertRoomsToHBZones(rooms, boundaryLocation=1):
     """Convert rooms to honeybee zones.
-
     This script will only work from inside Dynamo nodes. for a similar script
     forRrevit check this link for more details:
     https://github.com/jeremytammik/SpatialElementGeometryCalculator/
@@ -270,10 +286,9 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                     # TODO: set adjacent surface
                     pass
 
-                # Take care of curtain wall systems
-                # I'm not sure how this will work with custom Curtain Wall
-                if getParameter(boundaryElement, 'Family') == 'Curtain Wall':
-                    _elementIds, _coordinates = \
+                if (hasattr(boundaryElement,'WallType')) and (str(boundaryElement.WallType.Kind) == 'Curtain'):
+
+                    _elementIds, _coordinates, _panelTransparencies = \
                         extractPanelsVertices(boundaryElement, _baseFace, opt)
 
                     for count, coordinate in enumerate(_coordinates):
@@ -284,12 +299,28 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                             continue
 
                         # create honeybee surface - use element id as the name
-                        _hbfenSurface = HBFenSurface(
-                            _elementIds[count], coordinate)
 
-                        # add fenestration surface to base honeybee surface
-                        _hbSurface.addFenestrationSurface(_hbfenSurface)
+                        # Check if the panel is a solid or glazed panel,
+                        # If the panel is glazed create a fenestration surface, if it is not just
+                        # create a normal surface
+
+                        if _panelTransparencies[count] == True:
+
+                            _hbfenSurface = HBFenSurface(
+                                _elementIds[count], coordinate)
+
+                            # add fenestration surface to base honeybee surface
+                            _hbSurface.addFenestrationSurface(_hbfenSurface)
+
+                        else:
+
+                            # Add the panel as a opaque surface to the zone
+
+                            _zone.addSurface(HBSurface(
+                                str(_elementIds[count]), coordinate))
+
                 else:
+
                     # check if there is any child elements
                     childElements = getChildElemenets(boundaryElement)
 
@@ -305,7 +336,7 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                                     .format(childElements[count].Id)
                                 continue
 
-                            # create honeybee surface - use element id as the name
+                             # create honeybee surface - use element id as the name
                             _hbfenSurface = HBFenSurface(
                                 childElements[count].Id, coordinate)
                             # add fenestration surface to base honeybee surface
@@ -317,6 +348,7 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
 
         _zones[zoneCount] = _zone
 
+        #raise Exception([wall.name for wall in _zone.walls])
         # clean up!
         elementsData.Dispose()
 
