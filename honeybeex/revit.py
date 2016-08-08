@@ -6,7 +6,9 @@ from hbfensurface import HBFenSurface
 
 import uuid
 
-panelNames = []
+debug = []
+
+debug2 = []
 
 try:
     import clr
@@ -286,6 +288,8 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                     # TODO: set adjacent surface
                     pass
 
+                #debug.append(boundaryElement.WallType.Kind)
+
                 if (hasattr(boundaryElement,'WallType')) and (str(boundaryElement.WallType.Kind) == 'Curtain'):
 
                     _elementIds, _coordinates, _panelTransparencies = \
@@ -321,10 +325,51 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
 
                 else:
 
+                    # If it is a wall it is a basic wall so check for childElements
+
                     # check if there is any child elements
                     childElements = getChildElemenets(boundaryElement)
 
                     if childElements:
+
+                        for childElement in childElements:
+
+                            # Using childElement[0] as for some reason childElements returns a tuple
+                            if hasattr(childElement,'WallType') and (str(childElement.WallType.Kind) == 'Curtain'):
+
+                                # ChildElement is a CurtainWall, extractPanel Vertices
+                                _elementIds, _coordinates, _panelTransparencies = \
+                                    extractPanelsVertices(childElement, _baseFace, opt)
+
+                                for count, coordinate in enumerate(_coordinates):
+                                    if not coordinate:
+                                        print "{} has an opening with less than " \
+                                            "two coordinates. It has been removed!" \
+                                            .format(childElements[count].Id)
+                                        continue
+
+                                    # create honeybee surface - use element id as the name
+
+                                    # Check if the panel is a solid or glazed panel,
+                                    # If the panel is glazed create a fenestration surface, if it is not just
+                                    # create a normal surface
+
+                                    if _panelTransparencies[count] == True:
+
+                                        _hbfenSurface = HBFenSurface(
+                                            _elementIds[count], coordinate)
+
+                                        # add fenestration surface to base honeybee surface
+                                        _hbSurface.addFenestrationSurface(_hbfenSurface)
+
+                                    else:
+
+                                        # Add the panel as a opaque surface to the zone
+
+                                        _zone.addSurface(HBSurface(
+                                            str(_elementIds[count]), coordinate))
+
+                        # Window seems to always a be a FamilyInstance, this code will only extract window instances
 
                         _coordinates = exctractGlazingVertices(boundaryElement, _baseFace, opt)
 
@@ -341,6 +386,8 @@ def convertRoomsToHBZones(rooms, boundaryLocation=1):
                                 childElements[count].Id, coordinate)
                             # add fenestration surface to base honeybee surface
                             _hbSurface.addFenestrationSurface(_hbfenSurface)
+
+                        #debug2.append(_coordinates)
 
                 # add hbsurface to honeybee zone
                 _zone.addSurface(_hbSurface)
